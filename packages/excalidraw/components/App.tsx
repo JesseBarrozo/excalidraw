@@ -354,6 +354,10 @@ import {
   parseDataTransferEvent,
   type ParsedDataTransferFile,
 } from "../clipboard";
+import {
+  getTextPasteAnimationConfig,
+  splitTextIntoGraphemes,
+} from "../textPaste";
 
 import { exportCanvas, loadFromBlob } from "../data";
 import Library, { distributeLibraryItemsOnSquareGrid } from "../data/library";
@@ -665,6 +669,11 @@ class App extends React.Component<AppProps, AppState> {
   private elementsPendingErasure: ElementsPendingErasure = new Set();
 
   private _initialized = false;
+
+  private textPasteAnimation: {
+    timeoutId: number | null;
+    finish: () => void;
+  } | null = null;
 
   private readonly editorLifecycleEvents = new AppEventBus<
     ExcalidrawImperativeAPIEventMap,
@@ -3804,6 +3813,10 @@ class App extends React.Component<AppProps, AppState> {
     this.imageCache.clear();
     this.resizeObserver?.disconnect();
     this.unmounted = true;
+    if (this.textPasteAnimation?.timeoutId) {
+      window.clearTimeout(this.textPasteAnimation.timeoutId);
+    }
+    this.textPasteAnimation = null;
     this.viewport.destroy();
     this.removeEventListeners();
     this.library.destroy();
@@ -4840,6 +4853,145 @@ class App extends React.Component<AppProps, AppState> {
     }
   }
 
+  private animateTextPaste(
+    textElements: readonly NonDeleted<ExcalidrawTextElement>[],
+    selectedElementIds: AppState["selectedElementIds"],
+  ) {
+    this.textPasteAnimation?.finish();
+
+    const lines = textElements.map((element) => ({
+      element,
+      graphemes: splitTextIntoGraphemes(element.originalText),
+      visibleGraphemes: 0,
+    }));
+    const graphemeCount = lines.reduce(
+      (count, line) => count + line.graphemes.length,
+      0,
+    );
+    const { interval, graphemesPerFrame } =
+      getTextPasteAnimationConfig(graphemeCount);
+    const renderedElements = new Map<
+      ExcalidrawElement["id"],
+      NonDeleted<ExcalidrawTextElement>
+    >();
+    let activeLineIndex = 0;
+    let isFirstFrame = true;
+
+    const animation = {
+      timeoutId: null as number | null,
+      finish: () => advance(true),
+    };
+
+    const advance = (finish = false) => {
+      if (this.unmounted || this.textPasteAnimation !== animation) {
+        return;
+      }
+
+      let remainingGraphemes = finish ? Infinity : graphemesPerFrame;
+
+      while (activeLineIndex < lines.length && remainingGraphemes > 0) {
+        const line = lines[activeLineIndex];
+        const remainingInLine = line.graphemes.length - line.visibleGraphemes;
+        const revealCount = Math.min(remainingInLine, remainingGraphemes);
+
+        line.visibleGraphemes += revealCount;
+        remainingGraphemes -= revealCount;
+
+        if (line.visibleGraphemes === line.graphemes.length) {
+          activeLineIndex++;
+        }
+      }
+
+      const replacements = new Map<
+        ExcalidrawElement["id"],
+        NonDeleted<ExcalidrawTextElement>
+      >();
+      const insertions: NonDeleted<ExcalidrawTextElement>[] = [];
+      const elementsMap = this.scene.getElementsMapIncludingDeleted();
+      let wasInterrupted = false;
+
+      for (const line of lines) {
+        if (line.visibleGraphemes === 0) {
+          continue;
+        }
+
+        const { element } = line;
+        const currentElement = this.scene.getElement<
+          NonDeleted<ExcalidrawTextElement>
+        >(element.id);
+        const lastRenderedElement = renderedElements.get(element.id);
+
+        // Leave newer user changes alone if an element is edited or removed
+        // while its paste animation is still running.
+        if (lastRenderedElement && currentElement !== lastRenderedElement) {
+          wasInterrupted = true;
+          break;
+        }
+
+        const isComplete = line.visibleGraphemes === line.graphemes.length;
+        const nextOriginalText = line.graphemes
+          .slice(0, line.visibleGraphemes)
+          .join("");
+        const nextElement = isComplete
+          ? element
+          : newElementWith(currentElement || element, {
+              originalText: nextOriginalText,
+              ...refreshTextDimensions(
+                currentElement || element,
+                null,
+                elementsMap,
+                nextOriginalText,
+              ),
+            });
+
+        renderedElements.set(element.id, nextElement);
+
+        if (currentElement) {
+          replacements.set(element.id, nextElement);
+        } else if (!lastRenderedElement) {
+          insertions.push(nextElement);
+        }
+      }
+
+      if (wasInterrupted) {
+        if (animation.timeoutId !== null) {
+          window.clearTimeout(animation.timeoutId);
+        }
+        this.textPasteAnimation = null;
+        return;
+      }
+
+      if (replacements.size) {
+        this.scene.replaceAllElements(
+          this.scene
+            .getElementsIncludingDeleted()
+            .map((element) => replacements.get(element.id) || element),
+        );
+      }
+      this.insertNewElements(insertions);
+
+      const isComplete = lines.every(
+        (line) => line.visibleGraphemes === line.graphemes.length,
+      );
+
+      if (isComplete) {
+        this.textPasteAnimation = null;
+      } else {
+        animation.timeoutId = window.setTimeout(advance, interval);
+      }
+
+      if (isFirstFrame) {
+        isFirstFrame = false;
+        this.setState({ selectedElementIds });
+      } else {
+        this.forceUpdate();
+      }
+    };
+
+    this.textPasteAnimation = animation;
+    advance();
+  }
+
   private addTextFromPaste(text: string, isPlainPaste = false) {
     const { x, y } = viewportCoordsToSceneCoords(
       {
@@ -4880,7 +5032,7 @@ class App extends React.Component<AppProps, AppState> {
 
     const lines = isPlainPaste ? [text] : text.split("\n");
     const textElements = lines.reduce(
-      (acc: ExcalidrawTextElement[], line, idx) => {
+      (acc: NonDeleted<ExcalidrawTextElement>[], line, idx) => {
         const originalText = normalizeText(line).trim();
         if (originalText.length) {
           const topLayerFrame = this.getTopLayerFrameAtSceneCoords({
@@ -4934,14 +5086,27 @@ class App extends React.Component<AppProps, AppState> {
       return;
     }
 
+    const selectedElementIds = makeNextSelectedElementIds(
+      Object.fromEntries(textElements.map((el) => [el.id, true])),
+      this.state,
+    );
+    const previousElements = this.scene.getElementsIncludingDeleted();
+
+    // Record the completed paste up front so the whole animation remains one
+    // undoable operation, including when Undo is pressed before it finishes.
     this.insertNewElements(textElements);
-    this.store.scheduleCapture();
-    this.setState({
-      selectedElementIds: makeNextSelectedElementIds(
-        Object.fromEntries(textElements.map((el) => [el.id, true])),
-        this.state,
-      ),
+    const completedPasteElements = this.scene.getElementsIncludingDeleted();
+    this.scene.replaceAllElements(previousElements);
+    this.store.scheduleMicroAction({
+      action: CaptureUpdateAction.IMMEDIATELY,
+      elements: completedPasteElements,
+      appState: getObservedAppState({
+        ...this.state,
+        selectedElementIds,
+      }),
     });
+
+    this.animateTextPaste(textElements, selectedElementIds);
 
     if (
       !isPlainPaste &&

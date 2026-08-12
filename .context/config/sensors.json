@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "generatedAt": "2026-08-11T23:48:51.520Z",
+  "source": "manual",
+  "stack": {
+    "primaryLanguage": "typescript",
+    "languages": [
+      "javascript",
+      "typescript"
+    ],
+    "frameworks": [
+      "React",
+      "Vite"
+    ],
+    "buildTools": [
+      "docker",
+      "docker-compose"
+    ],
+    "testFrameworks": [
+      "Vitest",
+      "Testing Library"
+    ],
+    "packageManager": "yarn"
+  },
+  "sensors": [
+    {
+      "id": "typecheck",
+      "name": "Typecheck",
+      "description": "Type-check all workspaces",
+      "severity": "critical",
+      "command": "corepack yarn test:typecheck",
+      "script": "test:typecheck"
+    },
+    {
+      "id": "test",
+      "name": "Test",
+      "description": "Run the Vitest application suite once",
+      "severity": "critical",
+      "command": "corepack yarn test:app --watch=false",
+      "script": "test:app"
+    },
+    {
+      "id": "lint",
+      "name": "Lint",
+      "description": "Run ESLint with zero warnings",
+      "severity": "critical",
+      "command": "corepack yarn test:code",
+      "script": "test:code"
+    },
+    {
+      "id": "format",
+      "name": "Formatting",
+      "description": "Verify Prettier formatting",
+      "severity": "warning",
+      "command": "corepack yarn test:other",
+      "script": "test:other"
+    }
+  ]
+}

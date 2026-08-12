@@ -1,7 +1,7 @@
 import React from "react";
 import { vi } from "vitest";
 
-import { getLineHeightInPx } from "@excalidraw/element";
+import { getLineHeightInPx, isTextElement } from "@excalidraw/element";
 
 import { KEYS, arrayToMap, getLineHeight } from "@excalidraw/common";
 
@@ -125,6 +125,39 @@ describe("general paste behavior", () => {
 });
 
 describe("paste text as single lines", () => {
+  it("should reveal pasted text progressively and undo it in one step", async () => {
+    const text = "progressive paste";
+
+    pasteWithCtrlCmdV(text);
+
+    await waitFor(() => {
+      expect(h.elements.length).toBe(1);
+    });
+    const pastedTextElement = h.elements[0];
+    expect(isTextElement(pastedTextElement)).toBe(true);
+    if (!isTextElement(pastedTextElement)) {
+      throw new Error("Expected pasted element to be text");
+    }
+    expect(pastedTextElement.text.length).toBeLessThan(text.length);
+
+    await waitFor(() => {
+      const pastedTextElement = h.elements[0];
+      expect(isTextElement(pastedTextElement)).toBe(true);
+      expect(isTextElement(pastedTextElement) && pastedTextElement.text).toBe(
+        text,
+      );
+    });
+
+    await waitFor(() => {
+      expect(API.getUndoStack().length).toBe(1);
+    });
+
+    Keyboard.undo();
+    await waitFor(() => {
+      expect(h.elements[0].isDeleted).toBe(true);
+    });
+  });
+
   it("should create an element for each line when copying with Ctrl/Cmd+V", async () => {
     const text = "sajgfakfn\naaksfnknas\nakefnkasf";
     pasteWithCtrlCmdV(text);
