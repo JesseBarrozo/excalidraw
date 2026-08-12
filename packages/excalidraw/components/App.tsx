@@ -355,6 +355,11 @@ import {
   type ParsedDataTransferFile,
 } from "../clipboard";
 import {
+  getHighlighterBackgroundColor,
+  HIGHLIGHTER_ROUGHNESS,
+  HIGHLIGHTER_STROKE_WIDTH,
+} from "../highlighter";
+import {
   getTextPasteAnimationConfig,
   splitTextIntoGraphemes,
 } from "../textPaste";
@@ -6200,7 +6205,10 @@ class App extends React.Component<AppProps, AppState> {
         hoveredArrowTextAnchor: null,
       } as const;
 
-      if (nextActiveTool.type === "freedraw") {
+      if (
+        nextActiveTool.type === "freedraw" ||
+        nextActiveTool.type === "highlighter"
+      ) {
         this.store.scheduleCapture();
       }
 
@@ -8890,6 +8898,8 @@ class App extends React.Component<AppProps, AppState> {
         this.state.activeTool.type,
         pointerDownState,
       );
+    } else if (this.state.activeTool.type === "highlighter") {
+      this.createGenericElementOnPointerDown("rectangle", pointerDownState);
     } else if (this.state.activeTool.type === "custom") {
       this.cursor.applyForTool();
     } else if (
@@ -9223,7 +9233,9 @@ class App extends React.Component<AppProps, AppState> {
 
       const distance = getDistance(Array.from(gesture.pointers.values()));
       const scaleFactor =
-        this.state.activeTool.type === "freedraw" && this.state.penMode
+        (this.state.activeTool.type === "freedraw" ||
+          this.state.activeTool.type === "highlighter") &&
+        this.state.penMode
           ? 1
           : distance / gesture.initialDistance;
 
@@ -10477,6 +10489,47 @@ class App extends React.Component<AppProps, AppState> {
     );
   }
 
+  private moveHighlighterBehindIntersectingText = (highlighterId: string) => {
+    const elements = this.scene.getElementsIncludingDeleted();
+    const elementsMap = this.scene.getElementsMapIncludingDeleted();
+    const highlighter = elements.find(
+      (element) => element.id === highlighterId && !element.isDeleted,
+    );
+
+    if (!highlighter) {
+      return;
+    }
+
+    const highlighterBounds = getElementBounds(highlighter, elementsMap);
+    const intersectingText = elements.find(
+      (element) =>
+        !element.isDeleted &&
+        element.id !== highlighter.id &&
+        element.frameId === highlighter.frameId &&
+        isTextElement(element) &&
+        doBoundsIntersect(
+          highlighterBounds,
+          getElementBounds(element, elementsMap),
+        ),
+    );
+
+    if (!intersectingText) {
+      return;
+    }
+
+    const nextElements = elements.filter(
+      (element) => element.id !== highlighter.id,
+    );
+    const targetIndex = nextElements.findIndex(
+      (element) => element.id === intersectingText.id,
+    );
+    nextElements.splice(targetIndex, 0, highlighter);
+
+    this.scene.replaceAllElements(
+      syncMovedIndices(nextElements, arrayToMap([highlighter])),
+    );
+  };
+
   private createGenericElementOnPointerDown = (
     elementType: ExcalidrawGenericElement["type"] | "embeddable",
     pointerDownState: PointerDownState,
@@ -10494,17 +10547,32 @@ class App extends React.Component<AppProps, AppState> {
       y: gridY,
     });
 
+    const isHighlighter = this.state.activeTool.type === "highlighter";
+    const highlighterBackgroundColor = getHighlighterBackgroundColor(
+      this.state.currentItemBackgroundColor,
+    );
+
     const baseElementAttributes = {
       x: gridX,
       y: gridY,
-      strokeColor: this.state.currentItemStrokeColor,
-      backgroundColor: this.state.currentItemBackgroundColor,
+      strokeColor: isHighlighter
+        ? highlighterBackgroundColor
+        : this.state.currentItemStrokeColor,
+      backgroundColor: isHighlighter
+        ? highlighterBackgroundColor
+        : this.state.currentItemBackgroundColor,
       fillStyle: this.state.currentItemFillStyle,
-      strokeWidth: this.getCurrentItemStrokeWidth(elementType),
-      strokeStyle: this.state.currentItemStrokeStyle,
-      roughness: this.state.currentItemRoughness,
+      strokeWidth: isHighlighter
+        ? HIGHLIGHTER_STROKE_WIDTH
+        : this.getCurrentItemStrokeWidth(elementType),
+      strokeStyle: isHighlighter ? "solid" : this.state.currentItemStrokeStyle,
+      roughness: isHighlighter
+        ? HIGHLIGHTER_ROUGHNESS
+        : this.state.currentItemRoughness,
       opacity: this.state.currentItemOpacity,
-      roundness: this.getCurrentItemRoundness(elementType),
+      roundness: isHighlighter
+        ? null
+        : this.getCurrentItemRoundness(elementType),
       locked: false,
       frameId: topLayerFrame ? topLayerFrame.id : null,
     } as const;
@@ -12016,6 +12084,10 @@ class App extends React.Component<AppProps, AppState> {
         );
         // the above does not guarantee the scene to be rendered again, hence the trigger below
         this.scene.triggerUpdate();
+
+        if (this.state.activeTool.type === "highlighter") {
+          this.moveHighlighterBehindIntersectingText(newElement.id);
+        }
       }
 
       if (pointerDownState.drag.hasOccurred) {
@@ -12503,6 +12575,7 @@ class App extends React.Component<AppProps, AppState> {
       if (
         !this.isToolLocked() &&
         activeTool.type !== "freedraw" &&
+        activeTool.type !== "highlighter" &&
         newElement
       ) {
         this.setState((prevState) => ({
@@ -12564,6 +12637,7 @@ class App extends React.Component<AppProps, AppState> {
       if (
         !this.isToolLocked() &&
         activeTool.type !== "freedraw" &&
+        activeTool.type !== "highlighter" &&
         // bucket fill stays active for back-to-back fills regardless of the
         // tool lock (paint-bucket UX)
         activeTool.type !== TOOL_TYPE.bucketfill &&

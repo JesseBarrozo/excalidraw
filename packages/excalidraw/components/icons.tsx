@@ -398,6 +398,16 @@ export const FreedrawIcon = createIcon(
   modifiedTablerIconProps,
 );
 
+// modified tabler-icons: highlight
+export const HighlighterIcon = createIcon(
+  <g strokeWidth="1.5">
+    <path d="m14.5 4.5 5 5L9 20H4v-5L14.5 4.5Z" />
+    <path d="m12 7 5 5" />
+    <path d="M3 22h18" strokeWidth="3" />
+  </g>,
+  modifiedTablerIconProps,
+);
+
 // tabler-icons: typography
 export const TextIcon = createIcon(
   <g strokeWidth="1.5">

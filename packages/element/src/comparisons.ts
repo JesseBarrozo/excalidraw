@@ -8,6 +8,7 @@ export const hasBackground = (type: ElementOrToolType) =>
   type === "diamond" ||
   type === "line" ||
   type === "freedraw" ||
+  type === "highlighter" ||
   type === "autoshape" ||
   // tool-only type; makes the `G` background shortcut work for bucket fill
   type === "bucketfill";

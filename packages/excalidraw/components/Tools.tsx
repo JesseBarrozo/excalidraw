@@ -19,6 +19,7 @@ import {
   ArrowIcon,
   LineIcon,
   FreedrawIcon,
+  HighlighterIcon,
   drawShapeToolIcon,
   TextIcon,
   ImageIcon,
@@ -111,6 +112,10 @@ export const TOOLS = defineTools({
     icon: FreedrawIcon,
     letterKey: [KEYS.P, KEYS.X],
     numericKey: KEYS["7"],
+  },
+  highlighter: {
+    icon: HighlighterIcon,
+    letterKey: KEYS.M,
   },
   text: {
     icon: TextIcon,
@@ -409,7 +414,7 @@ export const SelectionToolPopover = ({
 };
 
 /**
- * The freedraw ⇄ draw-shape popover used in compact (tablet) and mobile
+ * The freedraw / draw-shape popover used in compact (tablet) and mobile
  * toolbars. The trigger remembers and displays the most recently used option.
  */
 export const FreedrawToolPopover = ({

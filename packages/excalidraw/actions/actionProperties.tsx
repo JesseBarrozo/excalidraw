@@ -163,6 +163,7 @@ import {
 } from "../hooks/useTextEditorFocus";
 
 import { getShortcutKey } from "../shortcut";
+import { getHighlighterBackgroundColor } from "../highlighter";
 
 import { register } from "./register";
 
@@ -458,6 +459,7 @@ export const actionChangeBackgroundColor = register<
   },
   PanelComponent: ({ elements, appState, updateData, app, data }) => {
     const { stylesPanelMode } = getStylesPanelInfo(app);
+    const isHighlighter = appState.activeTool.type === "highlighter";
 
     return (
       <>
@@ -470,13 +472,22 @@ export const actionChangeBackgroundColor = register<
           customizableTopPicks="elementBackground"
           type="elementBackground"
           label={t("labels.background")}
+          excludedColors={
+            isHighlighter ? [COLOR_PALETTE.transparent] : undefined
+          }
           color={getFormValue(
             elements,
             app,
             (element) => element.backgroundColor,
             true,
             (hasSelection) =>
-              !hasSelection ? appState.currentItemBackgroundColor : null,
+              !hasSelection
+                ? isHighlighter
+                  ? getHighlighterBackgroundColor(
+                      appState.currentItemBackgroundColor,
+                    )
+                  : appState.currentItemBackgroundColor
+                : null,
           )}
           onChange={(color) =>
             updateData({ currentItemBackgroundColor: color })

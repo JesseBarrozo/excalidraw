@@ -20,6 +20,7 @@ import {
   LassoIcon,
   laserPointerToolIcon,
   bucketFillIcon,
+  HighlighterIcon,
   MagicIcon,
   mermaidLogoIcon,
   DotsIcon,
@@ -65,6 +66,7 @@ const ExtraToolsDropdown = ({
 
   const frameToolSelected = activeTool.type === "frame";
   const drawShapeToolSelected = activeTool.type === "autoshape";
+  const highlighterToolSelected = activeTool.type === "highlighter";
   const laserToolSelected = activeTool.type === "laser";
   const bucketFillToolSelected = activeTool.type === "bucketfill";
   const lassoToolSelected =
@@ -81,6 +83,7 @@ const ExtraToolsDropdown = ({
             frameToolSelected ||
             embeddableToolSelected ||
             (isFullStylesPanel && drawShapeToolSelected) ||
+            highlighterToolSelected ||
             lassoToolSelected ||
             bucketFillToolSelected ||
             // in collab we're already highlighting the laser button
@@ -100,6 +103,8 @@ const ExtraToolsDropdown = ({
           ? EmbedIcon
           : isFullStylesPanel && drawShapeToolSelected
           ? drawShapeToolIcon
+          : highlighterToolSelected
+          ? HighlighterIcon
           : laserToolSelected && !app.props.isCollaborating
           ? laserPointerToolIcon
           : lassoToolSelected
@@ -141,6 +146,16 @@ const ExtraToolsDropdown = ({
           disabled={isToolButtonDisabled(app, "autoshape")}
         >
           {t("toolBar.autoshape")}
+        </DropdownMenu.Item>
+        <DropdownMenu.Item
+          onSelect={() => app.setActiveTool({ type: "highlighter" })}
+          icon={HighlighterIcon}
+          shortcut={getToolShortcut("highlighter")}
+          data-testid="toolbar-highlighter"
+          selected={highlighterToolSelected}
+          disabled={isToolButtonDisabled(app, "highlighter")}
+        >
+          {t("toolBar.highlighter")}
         </DropdownMenu.Item>
         <DropdownMenu.Item
           onSelect={() => app.setActiveTool({ type: "laser" })}

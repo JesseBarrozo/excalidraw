@@ -116,6 +116,7 @@ export const getShapeActionPredicates = (
       // bucket fill never renders transparent (it falls back to a real
       // color), so its fill style stays relevant either way
       activeToolType === "bucketfill" ||
+      activeToolType === "highlighter" ||
       (hasBackground(activeToolType) &&
         !isTransparent(appState.currentItemBackgroundColor)) ||
       targetElements.some(
@@ -143,10 +144,11 @@ export const getShapeActionPredicates = (
     opacity: activeToolType !== "autoshape" || hasSelection,
 
     // arrangement
-    // z-order controls are hidden while the freedraw or drawShape tool is
-    // active without an actual selection
+    // z-order controls are hidden while a persistent drawing tool is active
+    // without an actual selection
     layers:
       (activeToolType !== "freedraw" &&
+        activeToolType !== "highlighter" &&
         activeToolType !== "autoshape" &&
         !targetElements.some((element) => element.type === "freedraw")) ||
       getSelectedElements(elementsMap, appState).some(

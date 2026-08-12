@@ -448,6 +448,20 @@ type Element<T extends DrawingToolName> = T extends "line" | "freedraw"
 
 export class UI {
   static clickTool = (toolName: ToolType | "lock") => {
+    if (toolName === "highlighter") {
+      fireEvent.click(
+        GlobalTestState.renderResult.container.querySelector(
+          ".App-toolbar__extra-tools-trigger",
+        )!,
+      );
+      fireEvent.click(
+        document.querySelector<HTMLButtonElement>(
+          '[data-testid="toolbar-highlighter"]',
+        )!,
+      );
+      return;
+    }
+
     fireEvent.click(GlobalTestState.renderResult.getByToolName(toolName));
   };
 
