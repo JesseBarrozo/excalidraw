@@ -1,5 +1,5 @@
-const TEXT_PASTE_ANIMATION_INTERVAL = 30;
-const TEXT_PASTE_MAX_ANIMATION_DURATION = 600;
+const TEXT_PASTE_ANIMATION_INTERVAL = 50;
+const TEXT_PASTE_MAX_ANIMATION_DURATION = 2000;
 
 const graphemeSegmenter =
   typeof Intl !== "undefined" && "Segmenter" in Intl

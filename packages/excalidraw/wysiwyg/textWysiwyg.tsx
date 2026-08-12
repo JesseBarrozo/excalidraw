@@ -70,6 +70,10 @@ import {
   actionZoomIn,
   actionZoomOut,
 } from "../actions/actionCanvas";
+import {
+  getTextPasteAnimationConfig,
+  splitTextIntoGraphemes,
+} from "../textPaste";
 
 import type { ParsedDataTranferList } from "../clipboard";
 
@@ -528,11 +532,88 @@ export const textWysiwyg = ({
     };
   })();
 
+  let textPasteAnimation: {
+    timeoutId: number | null;
+    finish: () => void;
+    cancel: () => void;
+  } | null = null;
+  let isApplyingTextPasteFrame = false;
+
+  const animateTextPaste = (text: string) => {
+    textPasteAnimation?.finish();
+
+    const graphemes = splitTextIntoGraphemes(text);
+    if (!graphemes.length) {
+      return;
+    }
+
+    const { selectionStart, selectionEnd, value } = editable;
+    const prefix = value.slice(0, selectionStart);
+    const suffix = value.slice(selectionEnd);
+    const { interval, graphemesPerFrame } = getTextPasteAnimationConfig(
+      graphemes.length,
+    );
+    let visibleGraphemeCount = 0;
+
+    const animation = {
+      timeoutId: null as number | null,
+      finish: () => advance(true),
+      cancel: () => {
+        if (animation.timeoutId !== null) {
+          window.clearTimeout(animation.timeoutId);
+        }
+        if (textPasteAnimation === animation) {
+          textPasteAnimation = null;
+        }
+      },
+    };
+
+    const advance = (finish = false) => {
+      if (isDestroyed || textPasteAnimation !== animation) {
+        return;
+      }
+
+      visibleGraphemeCount = finish
+        ? graphemes.length
+        : Math.min(graphemes.length, visibleGraphemeCount + graphemesPerFrame);
+      const visibleText = graphemes.slice(0, visibleGraphemeCount).join("");
+      const caretPosition = prefix.length + visibleText.length;
+
+      try {
+        isApplyingTextPasteFrame = true;
+        editable.value = `${prefix}${visibleText}${suffix}`;
+        editable.setSelectionRange(caretPosition, caretPosition);
+        editable.dispatchEvent(new Event("input"));
+      } finally {
+        isApplyingTextPasteFrame = false;
+      }
+
+      if (visibleGraphemeCount === graphemes.length) {
+        animation.timeoutId = null;
+        textPasteAnimation = null;
+        return;
+      }
+
+      animation.timeoutId = window.setTimeout(advance, interval);
+    };
+
+    textPasteAnimation = animation;
+    advance();
+  };
+
   if (onChange) {
     editable.onpaste = async (event) => {
+      // The text editor owns this paste. Do not let the canvas-level paste
+      // handler process the same clipboard event as well.
+      event.stopPropagation();
+
       // we need to synchronously get the MIME types so we can preventDefault()
       // in the same tick (FF requires that)
       const mimeTypes = parseDataTransferEventMimeTypes(event);
+
+      if (mimeTypes.has(MIME_TYPES.text)) {
+        event.preventDefault();
+      }
 
       let dataList: ParsedDataTranferList | null = null;
 
@@ -557,17 +638,7 @@ export const textWysiwyg = ({
           if (parsed.elements) {
             const text = getTextFromElements(parsed.elements);
             if (text) {
-              const { selectionStart, selectionEnd, value } = editable;
-
-              editable.value =
-                value.slice(0, selectionStart) +
-                text +
-                value.slice(selectionEnd);
-
-              const newPos = selectionStart + text.length;
-              editable.selectionStart = editable.selectionEnd = newPos;
-
-              editable.dispatchEvent(new Event("input"));
+              animateTextPaste(text);
             }
           }
 
@@ -599,21 +670,29 @@ export const textWysiwyg = ({
         fontFamily: app.state.currentItemFontFamily,
       });
       if (container) {
+        const { selectionStart, selectionEnd, value } = editable;
+        const valueAfterPaste =
+          value.slice(0, selectionStart) + text + value.slice(selectionEnd);
         const boundTextElement = getBoundTextElement(
           container,
           app.scene.getNonDeletedElementsMap(),
         );
         const wrappedText = wrapText(
-          `${editable.value}${text}`,
+          valueAfterPaste,
           font,
           getBoundTextMaxWidth(container, boundTextElement),
         );
         const width = getTextWidth(wrappedText, font);
         editable.style.width = `${width}px`;
       }
+
+      animateTextPaste(text);
     };
 
     editable.oninput = () => {
+      if (!isApplyingTextPasteFrame) {
+        textPasteAnimation?.cancel();
+      }
       const normalized = normalizeText(editable.value);
       if (editable.value !== normalized) {
         const selectionStart = editable.selectionStart;
@@ -789,6 +868,8 @@ export const textWysiwyg = ({
       return;
     }
 
+    textPasteAnimation?.finish();
+
     isDestroyed = true;
     // cleanup must be run before onSubmit otherwise when app blurs the wysiwyg
     // it'd get stuck in an infinite loop of blur→onSubmit after we re-focus the
@@ -843,7 +924,9 @@ export const textWysiwyg = ({
     // remove events to ensure they don't late-fire
     editable.onblur = null;
     editable.oninput = null;
+    editable.onpaste = null;
     editable.onkeydown = null;
+    textPasteAnimation?.cancel();
 
     if (observer) {
       observer.disconnect();

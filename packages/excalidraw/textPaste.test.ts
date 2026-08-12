@@ -13,6 +13,6 @@ describe("progressive text paste", () => {
 
     expect(
       Math.ceil(1_000 / config.graphemesPerFrame) * config.interval,
-    ).toBeLessThanOrEqual(600);
+    ).toBeLessThanOrEqual(2_000);
   });
 });

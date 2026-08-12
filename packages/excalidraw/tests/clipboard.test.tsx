@@ -140,13 +140,25 @@ describe("paste text as single lines", () => {
     }
     expect(pastedTextElement.text.length).toBeLessThan(text.length);
 
+    const firstVisibleLength = pastedTextElement.text.length;
     await waitFor(() => {
       const pastedTextElement = h.elements[0];
       expect(isTextElement(pastedTextElement)).toBe(true);
-      expect(isTextElement(pastedTextElement) && pastedTextElement.text).toBe(
-        text,
-      );
+      expect(
+        isTextElement(pastedTextElement) && pastedTextElement.text.length,
+      ).toBeGreaterThan(firstVisibleLength);
     });
+
+    await waitFor(
+      () => {
+        const pastedTextElement = h.elements[0];
+        expect(isTextElement(pastedTextElement)).toBe(true);
+        expect(isTextElement(pastedTextElement) && pastedTextElement.text).toBe(
+          text,
+        );
+      },
+      { timeout: 2500 },
+    );
 
     await waitFor(() => {
       expect(API.getUndoStack().length).toBe(1);
@@ -161,17 +173,23 @@ describe("paste text as single lines", () => {
   it("should create an element for each line when copying with Ctrl/Cmd+V", async () => {
     const text = "sajgfakfn\naaksfnknas\nakefnkasf";
     pasteWithCtrlCmdV(text);
-    await waitFor(() => {
-      expect(h.elements.length).toEqual(text.split("\n").length);
-    });
+    await waitFor(
+      () => {
+        expect(h.elements.length).toEqual(text.split("\n").length);
+      },
+      { timeout: 2500 },
+    );
   });
 
   it("should ignore empty lines when creating an element for each line", async () => {
     const text = "\n\nsajgfakfn\n\n\naaksfnknas\n\nakefnkasf\n\n\n";
     pasteWithCtrlCmdV(text);
-    await waitFor(() => {
-      expect(h.elements.length).toEqual(3);
-    });
+    await waitFor(
+      () => {
+        expect(h.elements.length).toEqual(3);
+      },
+      { timeout: 2500 },
+    );
   });
 
   it("should not create any element if clipboard has only new lines", async () => {

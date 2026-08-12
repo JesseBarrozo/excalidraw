@@ -24,6 +24,7 @@ import type {
 } from "@excalidraw/element/types";
 
 import { Excalidraw } from "../index";
+import { createPasteEvent } from "../clipboard";
 import { API } from "../tests/helpers/api";
 import { Keyboard, Pointer, UI } from "../tests/helpers/ui";
 import { getTextEditor, updateTextEditor } from "../tests/queries/dom";
@@ -33,6 +34,7 @@ import {
   render,
   screen,
   unmountComponent,
+  waitFor,
 } from "../tests/test-utils";
 import {
   fireEvent,
@@ -237,6 +239,69 @@ describe("textWysiwyg", () => {
       expect(editor).not.toBe(null);
       expect(h.state.editingTextElement?.id).toBe(text.id);
       expect(h.elements.length).toBe(1);
+    });
+
+    it("should reveal pasted text progressively in the text editor", async () => {
+      UI.clickTool("text");
+      mouse.clickAt(100, 100);
+
+      const editor = await getTextEditor();
+      const initialText = "start end";
+      const pastedText = "progressive 👨‍👩‍👧‍👦 paste";
+      const finalText = `start ${pastedText}`;
+
+      updateTextEditor(editor, initialText);
+      editor.setSelectionRange(6, initialText.length);
+
+      const pasteEvent = createPasteEvent({
+        types: { "text/plain": pastedText },
+      });
+      editor.dispatchEvent(pasteEvent);
+
+      expect(pasteEvent.defaultPrevented).toBe(true);
+      await waitFor(() => {
+        expect(editor.value).not.toBe(initialText);
+        expect(editor.value).not.toBe(finalText);
+      });
+
+      const firstVisibleLength = editor.value.length;
+      await waitFor(() => {
+        expect(editor.value.length).toBeGreaterThan(firstVisibleLength);
+      });
+      await waitFor(
+        () => {
+          expect(editor.value).toBe(finalText);
+        },
+        { timeout: 2500 },
+      );
+
+      expect(editor.selectionStart).toBe(finalText.length);
+      expect(editor.selectionEnd).toBe(finalText.length);
+    });
+
+    it("should finish a progressive paste when exiting the text editor", async () => {
+      UI.clickTool("text");
+      mouse.clickAt(100, 100);
+
+      const editor = await getTextEditor();
+      const pastedText = "finish the entire progressive paste";
+
+      editor.dispatchEvent(
+        createPasteEvent({ types: { "text/plain": pastedText } }),
+      );
+      await waitFor(() => {
+        expect(editor.value.length).toBeGreaterThan(0);
+        expect(editor.value.length).toBeLessThan(pastedText.length);
+      });
+
+      Keyboard.exitTextEditor(editor);
+
+      await waitFor(() => {
+        expect(h.state.editingTextElement).toBeNull();
+      });
+      expect((h.elements[0] as ExcalidrawTextElement).originalText).toBe(
+        pastedText,
+      );
     });
 
     it("should vertically center newly created text on the cursor when clicked with text tool", async () => {
