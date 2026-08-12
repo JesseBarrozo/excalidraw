@@ -356,6 +356,7 @@ import {
 } from "../clipboard";
 import {
   getHighlighterBackgroundColor,
+  HIGHLIGHTER_ELEMENT_CUSTOM_DATA,
   HIGHLIGHTER_ROUGHNESS,
   HIGHLIGHTER_STROKE_WIDTH,
 } from "../highlighter";
@@ -8899,7 +8900,29 @@ class App extends React.Component<AppProps, AppState> {
         pointerDownState,
       );
     } else if (this.state.activeTool.type === "highlighter") {
-      this.createGenericElementOnPointerDown("rectangle", pointerDownState);
+      const targetText = this.getElementsAtPosition(
+        pointerDownState.origin.x,
+        pointerDownState.origin.y,
+        {
+          includeBoundTextElement: true,
+          includeLockedElements: true,
+        },
+      )
+        .slice()
+        .reverse()
+        .find(isTextElement);
+
+      if (targetText) {
+        const highlighter = this.createGenericElementOnPointerDown(
+          "rectangle",
+          pointerDownState,
+        );
+        this.placeHighlighterBehindTextLine(
+          highlighter.id,
+          targetText,
+          pointerDownState.origin.y,
+        );
+      }
     } else if (this.state.activeTool.type === "custom") {
       this.cursor.applyForTool();
     } else if (
@@ -10489,9 +10512,12 @@ class App extends React.Component<AppProps, AppState> {
     );
   }
 
-  private moveHighlighterBehindIntersectingText = (highlighterId: string) => {
+  private placeHighlighterBehindTextLine = (
+    highlighterId: string,
+    targetText: ExcalidrawTextElement,
+    pointerY: number,
+  ) => {
     const elements = this.scene.getElementsIncludingDeleted();
-    const elementsMap = this.scene.getElementsMapIncludingDeleted();
     const highlighter = elements.find(
       (element) => element.id === highlighterId && !element.isDeleted,
     );
@@ -10500,28 +10526,39 @@ class App extends React.Component<AppProps, AppState> {
       return;
     }
 
-    const highlighterBounds = getElementBounds(highlighter, elementsMap);
-    const intersectingText = elements.find(
-      (element) =>
-        !element.isDeleted &&
-        element.id !== highlighter.id &&
-        element.frameId === highlighter.frameId &&
-        isTextElement(element) &&
-        doBoundsIntersect(
-          highlighterBounds,
-          getElementBounds(element, elementsMap),
-        ),
+    const lineHeight = getLineHeightInPx(
+      targetText.fontSize,
+      targetText.lineHeight,
+    );
+    const lineCount = targetText.text.split("\n").length;
+    const lineIndex = Math.max(
+      0,
+      Math.min(
+        lineCount - 1,
+        Math.floor((pointerY - targetText.y) / lineHeight),
+      ),
     );
 
-    if (!intersectingText) {
-      return;
-    }
+    this.scene.mutateElement(
+      highlighter,
+      {
+        y:
+          targetText.y +
+          lineIndex * lineHeight +
+          (lineHeight - targetText.fontSize) / 2,
+        height: targetText.fontSize,
+      },
+      {
+        informMutation: false,
+        isDragging: false,
+      },
+    );
 
     const nextElements = elements.filter(
       (element) => element.id !== highlighter.id,
     );
     const targetIndex = nextElements.findIndex(
-      (element) => element.id === intersectingText.id,
+      (element) => element.id === targetText.id,
     );
     nextElements.splice(targetIndex, 0, highlighter);
 
@@ -10533,7 +10570,7 @@ class App extends React.Component<AppProps, AppState> {
   private createGenericElementOnPointerDown = (
     elementType: ExcalidrawGenericElement["type"] | "embeddable",
     pointerDownState: PointerDownState,
-  ): void => {
+  ): ExcalidrawElement => {
     const [gridX, gridY] = getGridPoint(
       pointerDownState.origin.x,
       pointerDownState.origin.y,
@@ -10561,7 +10598,7 @@ class App extends React.Component<AppProps, AppState> {
       backgroundColor: isHighlighter
         ? highlighterBackgroundColor
         : this.state.currentItemBackgroundColor,
-      fillStyle: this.state.currentItemFillStyle,
+      fillStyle: isHighlighter ? "solid" : this.state.currentItemFillStyle,
       strokeWidth: isHighlighter
         ? HIGHLIGHTER_STROKE_WIDTH
         : this.getCurrentItemStrokeWidth(elementType),
@@ -10573,6 +10610,7 @@ class App extends React.Component<AppProps, AppState> {
       roundness: isHighlighter
         ? null
         : this.getCurrentItemRoundness(elementType),
+      customData: isHighlighter ? HIGHLIGHTER_ELEMENT_CUSTOM_DATA : undefined,
       locked: false,
       frameId: topLayerFrame ? topLayerFrame.id : null,
     } as const;
@@ -10601,6 +10639,8 @@ class App extends React.Component<AppProps, AppState> {
         newElement: element,
       });
     }
+
+    return element;
   };
 
   private createFrameElementOnPointerDown = (
@@ -12084,10 +12124,6 @@ class App extends React.Component<AppProps, AppState> {
         );
         // the above does not guarantee the scene to be rendered again, hence the trigger below
         this.scene.triggerUpdate();
-
-        if (this.state.activeTool.type === "highlighter") {
-          this.moveHighlighterBehindIntersectingText(newElement.id);
-        }
       }
 
       if (pointerDownState.drag.hasOccurred) {
@@ -13487,6 +13523,23 @@ class App extends React.Component<AppProps, AppState> {
       pointerCoords.y,
       event[KEYS.CTRL_OR_CMD] ? null : this.getEffectiveGridSize(),
     );
+
+    if (this.state.activeTool.type === "highlighter") {
+      const originX = pointerDownState.originInGrid.x;
+      this.scene.mutateElement(
+        newElement,
+        {
+          x: Math.min(originX, gridX),
+          width: Math.abs(gridX - originX),
+        },
+        {
+          informMutation,
+          isDragging: false,
+        },
+      );
+      this.setState({ newElement, snapLines: [] });
+      return;
+    }
 
     const image =
       isInitializedImageElement(newElement) &&

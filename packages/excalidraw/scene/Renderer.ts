@@ -16,6 +16,7 @@ import type {
 
 import type { Scene } from "@excalidraw/element";
 
+import { isHighlighterElement } from "../highlighter";
 import { renderStaticSceneThrottled } from "../renderer/staticScene";
 
 import type { RenderableElementsMap } from "./types";
@@ -96,7 +97,11 @@ export class Renderer {
     newElement: AppState["newElement"];
   }) {
     const elementsMap = toBrandedType<RenderableElementsMap>(new Map());
-    const newElementCanvasElement = newElement?.frameId ? null : newElement;
+    const renderNewElementOnStaticCanvas =
+      !!newElement?.frameId || isHighlighterElement(newElement);
+    const newElementCanvasElement = renderNewElementOnStaticCanvas
+      ? null
+      : newElement;
 
     for (const element of elements) {
       if (newElementCanvasElement?.id === element.id) {
@@ -208,7 +213,9 @@ export class Renderer {
   public getRenderableElements = (opts: GetRenderableElementsOpts) => {
     const { newElement } = opts;
     const canvasNonce = `${this.scene.getSceneNonce()}${
-      newElement?.frameId ? `:${newElement.versionNonce}` : ""
+      newElement?.frameId || isHighlighterElement(newElement)
+        ? `:${newElement.versionNonce}`
+        : ""
     }`;
 
     const ret = this._getRenderableElements({

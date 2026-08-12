@@ -113,17 +113,17 @@ export const getShapeActionPredicates = (
     strokeColor: canChangeStrokeColor(appState, targetElements),
     backgroundColor: canChangeBackgroundColor(appState, targetElements),
     fill:
+      activeToolType !== "highlighter" &&
       // bucket fill never renders transparent (it falls back to a real
       // color), so its fill style stays relevant either way
-      activeToolType === "bucketfill" ||
-      activeToolType === "highlighter" ||
-      (hasBackground(activeToolType) &&
-        !isTransparent(appState.currentItemBackgroundColor)) ||
-      targetElements.some(
-        (element) =>
-          hasBackground(element.type) &&
-          !isTransparent(element.backgroundColor),
-      ),
+      (activeToolType === "bucketfill" ||
+        (hasBackground(activeToolType) &&
+          !isTransparent(appState.currentItemBackgroundColor)) ||
+        targetElements.some(
+          (element) =>
+            hasBackground(element.type) &&
+            !isTransparent(element.backgroundColor),
+        )),
 
     // stroke / shape properties
     strokeWidth: forToolOrSelection(hasStrokeWidth),

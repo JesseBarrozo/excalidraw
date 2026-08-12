@@ -11,6 +11,7 @@ import {
   HIGHLIGHTER_DEFAULT_COLOR,
   HIGHLIGHTER_ROUGHNESS,
   HIGHLIGHTER_STROKE_WIDTH,
+  isHighlighterElement,
 } from "../highlighter";
 import { Excalidraw } from "../index";
 
@@ -56,15 +57,15 @@ describe("highlighter tool", () => {
     expect(h.state.activeTool.type).toBe("highlighter");
   });
 
-  it("shows background, fill, and transparency controls", () => {
+  it("shows background and transparency controls without fill options", () => {
     API.setAppState({
       currentItemBackgroundColor: COLOR_PALETTE.transparent,
     });
     Keyboard.keyPress(KEYS.M);
 
-    expect(queryByTestId(document.body, "fill-hachure")).not.toBeNull();
-    expect(queryByTestId(document.body, "fill-cross-hatch")).not.toBeNull();
-    expect(queryByTestId(document.body, "fill-solid")).not.toBeNull();
+    expect(queryByTestId(document.body, "fill-hachure")).toBeNull();
+    expect(queryByTestId(document.body, "fill-cross-hatch")).toBeNull();
+    expect(queryByTestId(document.body, "fill-solid")).toBeNull();
     expect(queryByTestId(document.body, "opacity")).not.toBeNull();
 
     togglePopover("Background");
@@ -72,6 +73,15 @@ describe("highlighter tool", () => {
   });
 
   it("draws with the reference blue and remains active", () => {
+    const text = API.createElement({
+      type: "text",
+      x: 20,
+      y: 20,
+      width: 240,
+      height: 25,
+      text: "Highlighted text",
+    });
+    API.setElements([text]);
     API.setAppState({
       currentItemBackgroundColor: COLOR_PALETTE.transparent,
     });
@@ -81,19 +91,22 @@ describe("highlighter tool", () => {
     mouse.moveTo(230, 90);
     mouse.upAt();
 
-    const highlighter = h.elements[0] as ExcalidrawRectangleElement;
+    const highlighter = h.elements.find(
+      (element) => element.id !== text.id,
+    ) as ExcalidrawRectangleElement;
     expect(highlighter.type).toBe("rectangle");
     expect(highlighter.backgroundColor).toBe(HIGHLIGHTER_DEFAULT_COLOR);
     expect(highlighter.strokeColor).toBe(HIGHLIGHTER_DEFAULT_COLOR);
     expect(highlighter.strokeWidth).toBe(HIGHLIGHTER_STROKE_WIDTH);
     expect(highlighter.strokeStyle).toBe("solid");
+    expect(highlighter.fillStyle).toBe("solid");
     expect(highlighter.roughness).toBe(HIGHLIGHTER_ROUGHNESS);
     expect(highlighter.roundness).toBeNull();
     expect(h.state.activeTool.type).toBe("highlighter");
     expect(API.getSelectedElements()).toEqual([]);
   });
 
-  it("applies panel options and places the highlight behind intersecting text", () => {
+  it("starts behind text at font size and only lets the user set its width", () => {
     const background = API.createElement({
       type: "rectangle",
       x: 0,
@@ -108,11 +121,11 @@ describe("highlighter tool", () => {
       width: 160,
       height: 40,
       text: "Highlighted text",
+      fontSize: 32,
     }) as ExcalidrawTextElement;
     API.setElements([background, text]);
 
     Keyboard.keyPress(KEYS.M);
-    fireEvent.click(queryByTestId(document.body, "fill-solid")!);
     fireEvent.change(queryByTestId(document.body, "opacity")!, {
       target: { value: "55" },
     });
@@ -120,8 +133,33 @@ describe("highlighter tool", () => {
     togglePopover("Background");
     fireEvent.click(queryByTestId(document.body, "color-blue")!);
 
-    mouse.downAt(60, 50);
-    mouse.moveTo(260, 110);
+    mouse.downAt(90, 75);
+
+    const highlighterAtStart = h.elements.find(
+      (element) => element.id !== background.id && element.id !== text.id,
+    ) as ExcalidrawRectangleElement;
+    const expectedY = text.y + (text.height - text.fontSize) / 2;
+
+    expect(highlighterAtStart.y).toBe(expectedY);
+    expect(highlighterAtStart.height).toBe(text.fontSize);
+    expect(isHighlighterElement(highlighterAtStart)).toBe(true);
+    expect(
+      GlobalTestState.renderResult.container.querySelector(
+        "canvas.excalidraw__canvas:not(.static):not(.interactive)",
+      ),
+    ).toBeNull();
+    expect(h.elements.map((element) => element.id)).toEqual([
+      background.id,
+      highlighterAtStart.id,
+      text.id,
+    ]);
+
+    mouse.moveTo(260, 180);
+
+    expect(highlighterAtStart.y).toBe(expectedY);
+    expect(highlighterAtStart.height).toBe(text.fontSize);
+    expect(highlighterAtStart.width).toBe(170);
+
     mouse.upAt();
 
     const highlighter = h.elements.find(
@@ -132,10 +170,23 @@ describe("highlighter tool", () => {
     expect(highlighter.backgroundColor).not.toBe(HIGHLIGHTER_DEFAULT_COLOR);
     expect(highlighter.fillStyle).toBe("solid");
     expect(highlighter.opacity).toBe(55);
+    expect(highlighter.y).toBe(expectedY);
+    expect(highlighter.height).toBe(text.fontSize);
     expect(h.elements.map((element) => element.id)).toEqual([
       background.id,
       highlighter.id,
       text.id,
     ]);
+  });
+
+  it("does not create a freely resizable shape away from text", () => {
+    Keyboard.keyPress(KEYS.M);
+
+    mouse.downAt(30, 30);
+    mouse.moveTo(230, 130);
+    mouse.upAt();
+
+    expect(h.elements).toEqual([]);
+    expect(h.state.activeTool.type).toBe("highlighter");
   });
 });
